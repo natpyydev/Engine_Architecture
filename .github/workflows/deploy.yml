@@ -1,4 +1,4 @@
-name: Deploy 3D V8 Engine Lab to GitHub Pages
+name: Deploy 3D Engine Lab to GitHub Pages
 
 on:
   push:

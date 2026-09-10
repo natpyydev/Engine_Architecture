@@ -1,71 +1,151 @@
-﻿# 3D V8 Engine Lab
+# 3D Engine Lab
 
-**3D V8 Engine Lab** is an English-first, highly interactive educational web laboratory built with React, TypeScript, Three.js, and procedural 3D geometry. It provides an engineering-grade, real-time visual simulation of a four-stroke 90-degree crossplane V8 internal combustion engine, explaining how chemical fuel energy is converted into mechanical torque through slider-crank kinematics and Otto-cycle thermodynamics.
+**3D Engine Lab** is an engineering-grade, highly interactive educational web simulator built with **React**, **TypeScript**, **Three.js**, and **procedural 3D geometry**. It provides real-time, physics-based simulations of iconic internal combustion engine architectures, illustrating how chemical energy is transformed into mechanical torque through slider-crank kinematics, gas exchange, and Otto-cycle thermodynamics.
+
+🔗 **Live Demo**: [https://shuen-05.github.io/Engine_Architecture/](https://shuen-05.github.io/Engine_Architecture/)
+
+---
+
+## Supported Engine Architectures
+
+| Architecture | Engine Code | Vehicle Model | Displacement & Aspiration | Power / Torque | Firing Order | Transmission |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **90° Crossplane V8** | `2UR-GSE` | Lexus LC 500 (URZ100) | 5.0L (4,969 cc) Naturally Aspirated | 471 HP / 540 Nm | `1-5-6-3-4-2-7-8` | DirectShift 10-Speed AT |
+| **Straight-6 (Inline-6)** | `S58B30T0` | BMW M3 Competition (G80) | 3.0L (2,993 cc) Twin-Turbo | 503 HP / 650 Nm | `1-5-3-6-2-4` | M Steptronic 8-Speed |
+| **180° Flat-4 (Boxer-4)** | `EJ257` | Subaru WRX STI (VAB) | 2.5L (2,457 cc) Single Twin-Scroll Turbo | 310 HP / 393 Nm | `1-3-2-4` | TY85 6-Speed Manual |
 
 ---
 
 ## Key Features
 
-### 1. Fully Procedural 3D Crossplane V8 Assembly
-- **Zero external 3D asset dependencies**: All components are synthesized procedurally via Three.js geometry buffers and realistic metallic PBR materials.
-- **Components Included**:
-  - 90° Vee cylinder block with bored cylinder sleeves and oil pan
-  - Forged crossplane crankshaft with 90° crankpins (0°, 90°, 270°, 180°) and dynamic counterweights
-  - Flywheel with starter ring gear and front harmonic balancer pulley
-  - 8 Pistons with wrist pins and compression/oil ring grooves
-  - 8 H-beam connecting rods with split rod caps and ARP bolts
-  - Double Overhead Camshafts (DOHC) with pear-shaped lobes rotating at half crankshaft speed ($\omega_{cam} = \omega / 2$)
-  - 16 Poppet valves with helical compression springs and retainers
-  - High-rise intake manifold with central plenum and rotating throttle butterfly blade
-  - Tuned 4-into-1 equal-pulse stainless steel exhaust headers
-  - Spark plugs with high-voltage ignition spark animation
+### 1. Multi-Engine Procedural 3D Assemblies
+* **Zero External 3D Asset Dependencies**: All crankshafts, connecting rods, pistons, camshafts, poppet valves, manifolds, and cylinder blocks are synthesized procedurally at runtime via Three.js geometry buffers and realistic metallic PBR materials.
+* **Architecture-Specific Mechanical Geometry**:
+  * **90° Crossplane V8**: 90° Vee block with staggered cylinder sleeves, 4-throw 90° crossplane crankshaft, dynamic counterweights, dual overhead camshafts, 32 valves, high-rise intake plenum, and 4-into-1 tuned exhaust headers.
+  * **Inline-6**: 6-cylinder inline block, 120° forged crankshaft with 7 main bearing journals (inherent primary and secondary harmonic balance), twin monoscroll turbochargers with wastegates, and integrated liquid charge-air cooler.
+  * **180° Boxer-4**: Horizontally-opposed flat-4 layout with opposing pistons canceling primary forces, dual cylinder heads, top-mount intercooler, and unequal length (UEL) exhaust runners.
+* **Viewport Modes**:
+  * **Cutaway View**: Longitudinal and cross-sectional slicing revealing internal combustion chambers and valvetrain.
+  * **X-Ray / Translucent View**: Ghosted engine block with visible moving internal assemblies.
+  * **Interactive Exploded View**: Smooth slider expanding all components outwards along their spatial axes.
+  * **Wireframe Mode**: Full structural polygon mesh visualization.
 
-### 2. Exact Slider-Crank Kinematics & Valve Dynamics
-- **Piston Displacement**:
+---
+
+### 2. Exact Slider-Crank Kinematics & Valvetrain Timing
+* **Piston Displacement Equation**:
   $$s(\theta) = r(1 - \cos\theta) + l\left(1 - \sqrt{1 - \lambda^2 \sin^2\theta}\right)$$
-  where $r = 43\text{ mm}$, $l = 150\text{ mm}$, $\lambda = r/l \approx 0.2867$.
-- **Connecting Rod Angular Tilt**: $\beta(\theta) = \arcsin(\lambda \sin\theta)$.
-- **Standard Firing Order**: **1-8-4-3-6-5-7-2** firing every 90° across the 720° four-stroke cycle:
-  - Bank 1 (Left, +45°): Cylinders 1, 3, 5, 7
-  - Bank 2 (Right, -45°): Cylinders 2, 4, 6, 8
-  - Asymmetric bank pulse pattern (L-R-R-L-R-L-L-R) producing the iconic American muscle car low-frequency rumble.
+  where $r$ is the crank radius (stroke / 2), $l$ is the connecting rod length, and $\lambda = r/l$ is the rod-to-stroke ratio.
+* **Connecting Rod Angular Tilt**:
+  $$\beta(\theta) = \arcsin(\lambda \sin\theta)$$
+* **Piston Velocity & Acceleration**:
+  $$v(\theta) = \omega r \left(\sin\theta + \frac{\lambda \sin 2\theta}{2\sqrt{1 - \lambda^2\sin^2\theta}}\right)$$
+* **Valvetrain Synchronicity**:
+  * Camshafts rotate at exact half-crankshaft speed ($\omega_{cam} = \frac{1}{2}\omega_{crank}$).
+  * True eccentric cam lobes driving spring-loaded poppet intake and exhaust valves with realistic lift and overlap profiles.
 
-### 3. Fluid & Combustion Shaders
-- **Intake**: Swirling cyan vapor streaming through the throttle blade and open intake valve.
-- **Compression**: Transition from cool cyan to dense, shimmering amber charge.
-- **Power (Combustion)**: Electric violet-blue spark flash triggering an expanding incandescent flame front (up to 2,500 K / 95 bar).
-- **Exhaust**: Smoky dark-crimson/orange exhaust gas pulse rushing into headers.
-- **Kinetic Energy Vectors**: Real-time force arrows showing combustion gas pressure $\to$ piston crown $\to$ connecting rod $\to$ crankpin moment $\to$ flywheel momentum.
+---
 
-### 4. Synchronized Thermodynamic Diagrams ($P\text{–}v$ and $T\text{–}s$)
-- Real-time 60fps Canvas renderers tracing the active cylinder state point $(v(\theta), P(\theta))$ and $(s(\theta), T(\theta))$.
-- Formulated with KaTeX:
-  - Ideal thermal efficiency: $\eta_{th} = 1 - \frac{1}{r_c^{\gamma - 1}} \approx 56.2\%$
-  - Net work: $W_{net} = \oint P \, dv = Q_{in} - Q_{out}$
-  - Instantaneous torque: $\tau(\theta) = F_{gas}(\theta) \cdot r \cdot \left(\sin\theta + \frac{\lambda \sin 2\theta}{2\sqrt{1-\lambda^2\sin^2\theta}}\right)$
-  - Brake Horsepower: $\text{BHP} = \frac{\tau \times \text{RPM}}{5252}$
+### 3. Four-Stroke Fluid Dynamics & Combustion Shaders
+* **Intake Stroke ($0^\circ - 180^\circ$)**: Swirling cyan air-fuel vapor streams into the cylinder through open intake valves.
+* **Compression Stroke ($180^\circ - 360^\circ$)**: Chamber volume decreases as charge temperature and pressure rise, transitioning to glowing compressed amber.
+* **Power / Combustion Stroke ($360^\circ - 540^\circ$)**: Timed high-voltage electric ignition spark initiates an expanding spherical turbulent flame front (up to 2,500 K and 95 bar peak pressure).
+* **Exhaust Stroke ($540^\circ - 720^\circ$)**: Burnt gases pulse out into the exhaust headers in an incandescent crimson flame plume.
+* **Dynamic Kinetic Force Vectors**: Real-time 3D force arrows visually trace instantaneous torque transmission:
+  $$\text{Combustion Gas Pressure} \longrightarrow \text{Piston Crown} \longrightarrow \text{Connecting Rod} \longrightarrow \text{Crankpin Moment} \longrightarrow \text{Flywheel}$$
 
-### 5. Procedural Web Audio API Sound Synthesizer
-- Synthesizes realistic 4-pulse-per-rev crossplane exhaust tone with sub-harmonic bank pulses, throttle lowpass filter sweep, mechanical valve clicking, and starter motor cranking sound.
+---
 
-### 6. Guided Lessons & Diagnostic Fault Challenges
-- **6 Educational Chapters**: V8 Architecture, Otto Cycle, Crossplane vs. Flatplane, Valvetrain & Gas Exchange, Combustion Physics, and Kinetic Energy Transfer.
-- **5 Diagnostic Fault Scenarios**: Cylinder #3 Misfire, High-RPM Valve Float, Pre-Ignition Knock, Lean Fuel Mixture, and Blown Head Gasket.
-- **Interactive Quiz Challenge Mode**: Blind fault injection where users diagnose root causes from telemetry and execute mechanical repairs.
+### 4. Live Thermodynamic Diagrams ($P\text{–}v$ & $T\text{–}s$)
+* Synchronized 60 FPS Canvas renderers tracing the real-time state points $(v(\theta), P(\theta))$ and $(s(\theta), T(\theta))$ for any selected cylinder.
+* Real-time thermodynamic computations rendered with **KaTeX**:
+  * **Ideal Thermal Efficiency**: $\eta_{th} = 1 - \frac{1}{r_c^{\gamma - 1}}$
+  * **Net Work per Cycle**: $W_{net} = \oint P \, dv = Q_{in} - Q_{out}$
+  * **Instantaneous Torque**: $\tau(\theta) = F_{gas}(\theta) \cdot r \cdot \left(\sin\theta + \frac{\lambda \sin 2\theta}{2\sqrt{1-\lambda^2\sin^2\theta}}\right)$
+  * **Brake Horsepower**: $\text{BHP} = \frac{\tau \times \text{RPM}}{5252}$
+
+---
+
+### 5. Interactive Driving Cockpit & Powertrain Simulation
+* **Realistic Controls**: Starter ignition switch, throttle pedal with smooth return spring, hydraulic brake pedal, and interactive gear selector.
+* **Multi-Speed Transmissions**:
+  * Lexus LC 500: DirectShift 10-speed automatic with torque converter lockup.
+  * BMW M3: ZF 8-speed M Steptronic with launch control characteristics.
+  * Subaru WRX STI: 6-speed close-ratio manual gearbox.
+* **Instrument Cluster**: High-resolution analog tachometer gauge, digital speed HUD (km/h & mph), road load resistive friction, and drive mode selector (Comfort, Sport, Track).
+
+---
+
+### 6. Procedural Web Audio Engine Synthesizer
+* Built natively with the **Web Audio API** (no pre-recorded sound loops):
+  * **Crossplane V8 Profile**: Asymmetric bank pulse pattern (`L-R-R-L-R-L-L-R`) delivering the signature deep, burbling American/Japanese V8 rumble.
+  * **Inline-6 Profile**: Perfectly spaced 120° pulses producing a creamy, mechanical high-frequency scream.
+  * **Boxer-4 Profile**: Unequal length exhaust manifold pulse delay generating the distinct Subaru off-beat boxer thrum.
+  * **Dynamic Effects**: Starter motor cranking, cold-start rev flare, high-RPM throttle filter sweeps, and mechanical valve ticking.
+
+---
+
+### 7. Educational Modules & Diagnostic Lab
+* **6 Interactive Lessons**:
+  1. Engine Architectures (V8 vs. I-6 vs. Boxer-4 layout trade-offs)
+  2. Four-Stroke Otto Cycle Principles
+  3. Crankshaft Physics & Balance (Primary & Secondary harmonic forces)
+  4. Valvetrain & Gas Exchange Dynamics
+  5. Combustion Physics & Flame Propagation
+  6. Kinetic Energy & Powertrain Mechanics
+* **5 Real-Time Fault Diagnostics**:
+  * Cylinder Misfire (ignition/fuel delivery failure)
+  * High-RPM Valve Float (spring resonance limit)
+  * Pre-Ignition Knock / Detonation
+  * Lean Air-Fuel Mixture (high EGT thermal overload)
+  * Blown Cylinder Head Gasket (combustion gas crossover)
+* **Interactive Quiz & Challenge Mode**: Blind diagnostic fault injection where users interpret telemetry graphs, pinpoint mechanical failures, and perform repairs.
+
+---
+
+## Tech Stack
+
+* **Frontend Framework**: React 18 with TypeScript
+* **3D Graphics Engine**: Three.js (Procedural geometries, PBR materials, custom particle shaders)
+* **Styling**: Tailwind CSS & Lucide Icons
+* **Math & Formulas**: KaTeX LaTeX typesetting
+* **Audio**: Native Web Audio API procedural synthesis (oscillators, biquad filters, waveshapers)
+* **Build System**: Vite 5
+* **CI/CD**: GitHub Actions deploying to GitHub Pages
 
 ---
 
 ## Getting Started
 
-### Development Server
+### Prerequisites
+* Node.js 18+ (Node 22 recommended)
+* npm, pnpm, or yarn
+
+### Installation
 ```bash
+# Clone the repository
+git clone https://github.com/shuen-05/Engine_Architecture.git
+cd Engine_Architecture
+
+# Install dependencies
 npm install
+
+# Start the local development server
 npm run dev
 ```
 
-### Production Build & Preview
+### Production Build
 ```bash
+# Build production bundle
 npm run build
+
+# Preview production build locally
 npm run preview
 ```
-Open [http://localhost:4173/](http://localhost:4173/) in any modern web browser.
+
+---
+
+## License
+
+This project is licensed under the MIT License.
+
