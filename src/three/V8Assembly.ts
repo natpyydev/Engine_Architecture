@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { EngineMaterialPalette } from './materials';
 import { CYLINDERS, CylinderConfig } from '../engine/firingOrder';
 import { CylinderTelemetry, SeeThroughMode } from '../engine/types';
+import { EngineParams, getDerivedGeometry } from '../engine/engineParams';
 
 export interface V8AssemblyNodes {
   rootGroup: THREE.Group;
@@ -163,6 +164,15 @@ export class V8Assembly {
   private readonly boreRadius: number = 47.0 * this.scale; // 94.0 mm bore / 2
   private readonly cylinderSpacingZ: number = 116.0 * this.scale; // 116.0 mm bore spacing (positive clearance between adjacent cylinders & flanges)
   private readonly zStart: number = 1.5 * this.cylinderSpacingZ; // Centered at Z = 0
+
+  // Live (slider-driven) geometry. The readonly fields above describe the reference 2UR-GSE build
+  // that the static meshes (block, heads, deck) were constructed for; these follow EngineParams.
+  private liveCrankRadius: number = this.crankRadius;
+  private liveRodLength: number = this.conRodLength;
+  private liveBoreScale: number = 1;
+  private crankPinRig: { mesh: THREE.Mesh; angleRad: number; z: number }[] = [];
+  private crankCounterweights: THREE.Mesh[] = [];
+  private rodRig: { small: THREE.Mesh[]; shank: THREE.Mesh[] }[] = [];
 
   constructor(materials: EngineMaterialPalette) {
     this.materials = materials;
@@ -734,6 +744,7 @@ export class V8Assembly {
       pinMesh.castShadow = true;
       pinMesh.userData = { componentId: 'crankshaft' };
       parent.add(pinMesh);
+      this.crankPinRig.push({ mesh: pinMesh, angleRad, z: pinZ });
 
       // Twin Counterweights flanking each rod journal (8 counterweights total, 2 per throw)
       [-0.68, 0.68].forEach((zOffset) => {
@@ -744,6 +755,7 @@ export class V8Assembly {
         cwMesh.castShadow = true;
         cwMesh.userData = { componentId: 'crankshaft' };
         parent.add(cwMesh);
+        this.crankCounterweights.push(cwMesh);
       });
     }
 
@@ -1134,6 +1146,8 @@ export class V8Assembly {
       boltHead.castShadow = true;
       group.add(boltHead);
     });
+
+    this.rodRig.push({ small: [smallEye, bushing], shank: [leftFlange, rightFlange, webMesh] });
 
     return group;
   }
@@ -1651,6 +1665,43 @@ export class V8Assembly {
     });
   }
 
+  /**
+   * Live displacement control (no rebuild, safe to call on every slider tick).
+   *  - Stroke: crank throw radius changes; crankpins move, counterweights scale, rods are re-lengthened
+   *            so TDC stays at the block deck (rod length + throw = constant).
+   *  - Bore:   pistons and cylinder sleeves are widened / narrowed.
+   */
+  public setEngineParams(params: EngineParams) {
+    const geo = getDerivedGeometry(params);
+    this.liveCrankRadius = geo.crankRadiusMm * this.scale;
+    this.liveRodLength = geo.conRodLengthMm * this.scale;
+    this.liveBoreScale = geo.boreMm / 2 / (this.boreRadius / this.scale);
+
+    // Crankpin journals sit at the live throw radius; counterweight outlines scale with it.
+    this.crankPinRig.forEach((pin) => {
+      pin.mesh.position.set(
+        Math.cos(pin.angleRad) * this.liveCrankRadius,
+        Math.sin(pin.angleRad) * this.liveCrankRadius,
+        pin.z
+      );
+    });
+    const throwScale = this.liveCrankRadius / this.crankRadius;
+    this.crankCounterweights.forEach((cw) => cw.scale.set(throwScale, throwScale, 1));
+
+    // Connecting rods: move the small end, stretch the shank between big end and small end.
+    const delta = this.liveRodLength - this.conRodLength;
+    const shankBottomY = 1.35;
+    const shankTopY = this.conRodLength - 0.55;
+    const shankScale = (shankTopY + delta - shankBottomY) / (shankTopY - shankBottomY);
+    this.rodRig.forEach((rig) => {
+      rig.small.forEach((m) => (m.position.y = this.liveRodLength));
+      rig.shank.forEach((m) => {
+        m.scale.y = shankScale;
+        m.position.y = shankBottomY * (1 - shankScale);
+      });
+    });
+  }
+
   public updateKinematics(
     telemetryList: CylinderTelemetry[],
     throttlePercent: number,
@@ -1800,14 +1851,16 @@ export class V8Assembly {
       // 1. Exact Crankpin Center in 3D World Space (Locked to the spinning crankshaft)
       const pinOffsetRad = (cfg.crankpinAngleDeg * Math.PI) / 180;
       const pinAngleRad = pinOffsetRad + masterAngleRad;
-      const cX = Math.cos(pinAngleRad) * this.crankRadius;
-      const cY = Math.sin(pinAngleRad) * this.crankRadius;
+      const cX = Math.cos(pinAngleRad) * this.liveCrankRadius;
+      const cY = Math.sin(pinAngleRad) * this.liveCrankRadius;
 
       // 2. Exact Slider-Crank Piston Distance along the Cylinder Bore Line
       const uX = Math.sin(bankAngleRad);
       const uY = Math.cos(bankAngleRad);
       const b = cX * uX + cY * uY;
-      const s = b + Math.sqrt(this.conRodLength * this.conRodLength - this.crankRadius * this.crankRadius + b * b);
+      const s =
+        b +
+        Math.sqrt(this.liveRodLength * this.liveRodLength - this.liveCrankRadius * this.liveCrankRadius + b * b);
 
       // Piston coordinates along cylinder bore (plus radial exploded separation if any)
       const sExploded = s + ep * 1.5;
@@ -1819,6 +1872,7 @@ export class V8Assembly {
       if (pistonMesh) {
         pistonMesh.position.set(pistonX, pistonY, zPos);
         pistonMesh.rotation.z = -bankAngleRad;
+        pistonMesh.scale.set(this.liveBoreScale, 1, this.liveBoreScale);
       }
 
       // 4. Position and Orient Connecting Rod (Locked to Crankpin and Piston Wrist-Pin)
@@ -1839,6 +1893,7 @@ export class V8Assembly {
       const inSpringPair = this.nodes.intakeSprings[idx];
       const exSpringPair = this.nodes.exhaustSprings[idx];
       const pistonCrownTopOffset = this.boreRadius * 1.35 * 0.475;
+      // Deck height is constant by design (live rod length + live throw == reference rod + throw).
       const deckHeight = this.conRodLength + this.crankRadius + pistonCrownTopOffset;
       const headDist = deckHeight + 0.95;
 
@@ -1899,6 +1954,7 @@ export class V8Assembly {
           zPos
         );
         liner.rotation.z = -bankAngleRad;
+        liner.scale.set(this.liveBoreScale, 1, this.liveBoreScale);
       }
     });
   }

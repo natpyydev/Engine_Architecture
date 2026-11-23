@@ -254,7 +254,8 @@ export class FlowVisualizer {
         bankAngleRad = (cfg.bankTiltDeg * Math.PI) / 180;
         const pistonCrownTopOffset = this.boreRadius * 1.35 * 0.475;
         const deckHeight = this.conRodLength + this.crankRadius + pistonCrownTopOffset;
-        const dispThreeUnits = (telem.pistonDisplacementMm / 89.5) * (this.crankRadius * 2);
+        // Telemetry displacement already follows the live stroke; 1 mm = this.scale scene units.
+        const dispThreeUnits = telem.pistonDisplacementMm * this.scale;
         const distFromCrankCenter = deckHeight - dispThreeUnits;
         pistonX = Math.sin(bankAngleRad) * distFromCrankCenter;
         pistonY = Math.cos(bankAngleRad) * distFromCrankCenter;

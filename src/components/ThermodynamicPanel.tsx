@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { CylinderTelemetry, DiagnosticFaultType } from '../engine/types';
 import { generateReferenceOttoCycle } from '../engine/thermodynamics';
-import { ENGINE_SPECS } from '../engine/kinematics';
+import { EngineParams, DEFAULT_ENGINE_PARAMS, getDerivedGeometry } from '../engine/engineParams';
 import { Activity, Gauge, Flame, Zap, HelpCircle } from 'lucide-react';
 import katex from 'katex';
 
@@ -12,6 +12,7 @@ interface ThermodynamicPanelProps {
   activeFault: DiagnosticFaultType;
   bhp: number;
   totalTorqueLbFt: number;
+  engineParams?: EngineParams;
 }
 
 export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
@@ -21,6 +22,7 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
   activeFault,
   bhp,
   totalTorqueLbFt,
+  engineParams = DEFAULT_ENGINE_PARAMS,
 }) => {
   const pvCanvasRef = useRef<HTMLCanvasElement>(null);
   const tsCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -78,7 +80,7 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
     const plotW = w - margin.left - margin.right;
     const plotH = h - margin.top - margin.bottom;
 
-    const refCycle = generateReferenceOttoCycle(throttle, activeFault);
+    const refCycle = generateReferenceOttoCycle(throttle, activeFault, engineParams);
 
     // ==========================================
     // 1. DRAW ENHANCED P-v DIAGRAM
@@ -120,8 +122,9 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
     pvCtx.textAlign = 'center';
     pvCtx.fillText('Volume V (cc)', margin.left + plotW / 2, h - 8);
 
-    const minV = ENGINE_SPECS.clearanceVolumeCc;
-    const maxV = minV + ENGINE_SPECS.displacementPerCylCc;
+    const geo = getDerivedGeometry(engineParams);
+    const minV = geo.clearanceVolumeCc;
+    const maxV = minV + geo.displacementPerCylCc;
     const maxP = Math.max(90, cylinder.pressureBar * 1.15);
 
     const mapX = (v: number) => margin.left + ((v - minV) / (maxV - minV)) * plotW;
@@ -314,7 +317,7 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
     tsCtx.shadowBlur = 14;
     tsCtx.fill();
     tsCtx.shadowBlur = 0;
-  }, [cylinder, throttle, activeFault]);
+  }, [cylinder, throttle, activeFault, engineParams]);
 
   return (
     <div className="flex flex-col gap-4 text-xs font-sans text-slate-200">

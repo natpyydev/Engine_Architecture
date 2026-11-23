@@ -6,6 +6,7 @@ import {
   calculateExhaustValveLift,
 } from './kinematics';
 import { calculateThermodynamics } from './thermodynamics';
+import { EngineParams, DEFAULT_ENGINE_PARAMS } from './engineParams';
 import { ENGINES, getEngineConfig } from './engineRegistry';
 
 export interface CylinderConfig {
@@ -44,20 +45,21 @@ export function computeAllCylindersTelemetry(
   rpm: number,
   throttle: number,
   activeFault: DiagnosticFaultType = 'none',
-  engineId: EngineId = 'v8_lexus'
+  engineId: EngineId = 'v8_lexus',
+  params: EngineParams = DEFAULT_ENGINE_PARAMS
 ): CylinderTelemetry[] {
   const normMaster = ((masterCrankAngleDeg % 720) + 720) % 720;
   const config = getEngineConfig(engineId);
-  const strokeMm = config.strokeMm;
+  const strokeMm = params.strokeMm;
 
   return config.cylinders.map((cfg) => {
     const cylCycleDeg = ((normMaster - cfg.firingCycleDeg + 360) % 720 + 720) % 720;
     const stroke = getStrokeStage(cylCycleDeg);
 
     const phiRad = (cylCycleDeg * Math.PI) / 180;
-    const dispMm = calculatePistonDisplacement(phiRad);
+    const dispMm = calculatePistonDisplacement(phiRad, params);
     const normPistonPos = Math.min(1, Math.max(0, dispMm / strokeMm));
-    const volumeCc = calculateCylinderVolume(phiRad);
+    const volumeCc = calculateCylinderVolume(phiRad, params);
 
     const isFaultyThisCyl =
       (activeFault === 'misfire_cyl3' && cfg.id === 3) ||
@@ -97,7 +99,8 @@ export function computeAllCylindersTelemetry(
       rpm,
       throttle,
       activeFault,
-      cfg.id
+      cfg.id,
+      params
     );
 
     return {

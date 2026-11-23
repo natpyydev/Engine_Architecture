@@ -1,5 +1,5 @@
 import { DiagnosticFaultType } from './types';
-import { ENGINE_SPECS } from './kinematics';
+import { EngineParams, DEFAULT_ENGINE_PARAMS, getDerivedGeometry } from './engineParams';
 
 export interface ThermoResult {
   pressureBar: number;
@@ -22,11 +22,13 @@ export function calculateThermodynamics(
   rpm: number,
   throttle: number,
   activeFault: DiagnosticFaultType = 'none',
-  cylinderId: number = 1
+  cylinderId: number = 1,
+  params: EngineParams = DEFAULT_ENGINE_PARAMS
 ): ThermoResult {
+  const geo = getDerivedGeometry(params);
   const normDeg = ((cylCycleDeg % 720) + 720) % 720;
-  const V_c = ENGINE_SPECS.clearanceVolumeCc;
-  const V_max = V_c + ENGINE_SPECS.displacementPerCylCc;
+  const V_c = geo.clearanceVolumeCc;
+  const V_max = V_c + geo.displacementPerCylCc;
   const gamma = 1.35;
 
   // Engine is OFF: ambient atmospheric equilibrium (1.01 bar, 25°C, 0 Nm)
@@ -113,7 +115,7 @@ export function calculateThermodynamics(
 
       if (normDeg <= 375) {
         const rise = (normDeg - 360) / 15;
-        pressure = (pIntake * Math.pow(ENGINE_SPECS.compressionRatio, gamma)) + (peakPress - 22) * rise;
+        pressure = (pIntake * Math.pow(geo.compressionRatio, gamma)) + (peakPress - 22) * rise;
         tempK = 800 + (peakTemp - 800) * rise;
       } else {
         const expVolRatio = Math.max(V_c, volumeCc) / V_c;
@@ -136,13 +138,13 @@ export function calculateThermodynamics(
     }
   }
 
-  const boreM = ENGINE_SPECS.boreMm / 1000;
+  const boreM = geo.boreMm / 1000;
   const pistonAreaM2 = Math.PI * Math.pow(boreM / 2, 2);
   const netPressurePa = (pressure - 1.013) * 1e5;
   const pistonForceN = netPressurePa * pistonAreaM2;
 
-  const rM = ENGINE_SPECS.crankRadiusMm / 1000;
-  const lambda = ENGINE_SPECS.rodToCrankRatio;
+  const rM = geo.crankRadiusMm / 1000;
+  const lambda = geo.rodToCrankRatio;
   const phiRad = (normDeg * Math.PI) / 180;
 
   const underRad = Math.max(0.01, 1 - lambda * lambda * Math.sin(phiRad) * Math.sin(phiRad));
@@ -163,22 +165,24 @@ export function calculateThermodynamics(
 
 export function generateReferenceOttoCycle(
   throttle: number = 80,
-  activeFault: DiagnosticFaultType = 'none'
+  activeFault: DiagnosticFaultType = 'none',
+  params: EngineParams = DEFAULT_ENGINE_PARAMS
 ): CyclePoint[] {
   const points: CyclePoint[] = [];
-  const V_c = ENGINE_SPECS.clearanceVolumeCc;
+  const geo = getDerivedGeometry(params);
+  const V_c = geo.clearanceVolumeCc;
 
   for (let deg = 0; deg < 720; deg += 4) {
     const phiRad = (deg * Math.PI) / 180;
-    const r = ENGINE_SPECS.crankRadiusMm;
-    const l = ENGINE_SPECS.conRodLengthMm;
+    const r = geo.crankRadiusMm;
+    const l = geo.conRodLengthMm;
     const lambda = r / l;
     const sinPhi = Math.sin(phiRad);
     const underRad = Math.max(0, 1 - lambda * lambda * sinPhi * sinPhi);
     const dispMm = r * (1 - Math.cos(phiRad)) + l * (1 - Math.sqrt(underRad));
-    const volCc = V_c + (dispMm / 10) * (Math.PI * Math.pow(ENGINE_SPECS.boreMm / 20, 2));
+    const volCc = V_c + (dispMm / 10) * geo.pistonAreaCm2;
 
-    const thermo = calculateThermodynamics(deg, volCc, 3000, throttle, activeFault, 1);
+    const thermo = calculateThermodynamics(deg, volCc, 3000, throttle, activeFault, 1, params);
 
     const T = thermo.tempKelvin;
     const v = volCc;

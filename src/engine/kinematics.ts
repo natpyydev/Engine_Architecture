@@ -1,5 +1,7 @@
 import { DiagnosticFaultType } from './types';
+import { EngineParams, DEFAULT_ENGINE_PARAMS, getDerivedGeometry } from './engineParams';
 
+// Legacy constants (kept for reference). Live code now reads EngineParams via engineParams.ts.
 export const ENGINE_SPECS = {
   name: '5.0L Naturally Aspirated 2UR-GSE Crossplane V8',
   boreMm: 94.0,
@@ -38,9 +40,11 @@ export const ENGINE_SPECS = {
  * Calculates piston displacement from TDC in millimeters
  * @param phiRad Crank angle relative to cylinder TDC in radians (0 = TDC)
  */
-export function calculatePistonDisplacement(phiRad: number): number {
-  const r = ENGINE_SPECS.crankRadiusMm;
-  const l = ENGINE_SPECS.conRodLengthMm;
+export function calculatePistonDisplacement(
+  phiRad: number,
+  params: EngineParams = DEFAULT_ENGINE_PARAMS
+): number {
+  const { crankRadiusMm: r, conRodLengthMm: l } = getDerivedGeometry(params);
   const lambda = r / l;
   const sinPhi = Math.sin(phiRad);
   const cosPhi = Math.cos(phiRad);
@@ -56,19 +60,25 @@ export function calculatePistonDisplacement(phiRad: number): number {
  * Calculates connecting rod angular tilt beta in radians
  * @param phiRad Crank angle relative to cylinder TDC in radians
  */
-export function calculateConRodAngle(phiRad: number): number {
-  const lambda = ENGINE_SPECS.rodToCrankRatio;
+export function calculateConRodAngle(
+  phiRad: number,
+  params: EngineParams = DEFAULT_ENGINE_PARAMS
+): number {
+  const lambda = getDerivedGeometry(params).rodToCrankRatio;
   return Math.asin(lambda * Math.sin(phiRad));
 }
 
 /**
  * Calculates normalized instantaneous cylinder volume V(theta) / V_max
  */
-export function calculateCylinderVolume(phiRad: number): number {
-  const dispMm = calculatePistonDisplacement(phiRad);
-  const areaCm2 = Math.PI * Math.pow(ENGINE_SPECS.boreMm / 20, 2);
-  const sweptVolumeCc = (dispMm / 10) * areaCm2;
-  return ENGINE_SPECS.clearanceVolumeCc + sweptVolumeCc;
+export function calculateCylinderVolume(
+  phiRad: number,
+  params: EngineParams = DEFAULT_ENGINE_PARAMS
+): number {
+  const geo = getDerivedGeometry(params);
+  const dispMm = calculatePistonDisplacement(phiRad, params);
+  const sweptVolumeCc = (dispMm / 10) * geo.pistonAreaCm2;
+  return geo.clearanceVolumeCc + sweptVolumeCc;
 }
 
 /**

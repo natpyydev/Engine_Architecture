@@ -9,6 +9,7 @@ import { GuidedLessonsPanel } from './components/GuidedLessonsPanel';
 import { DiagnosticLabPanel } from './components/DiagnosticLabPanel';
 import { ComponentInspector } from './components/ComponentInspector';
 import { TachometerGauge } from './components/TachometerGauge';
+import { DisplacementControl } from './components/DisplacementControl';
 import { X } from 'lucide-react';
 import {
   CylinderTelemetry,
@@ -29,22 +30,20 @@ import {
 import { computeAllCylindersTelemetry, getEngineCylinders } from './engine/firingOrder';
 import { getEngineConfig } from './engine/engineRegistry';
 import { engineAudio } from './engine/audioSynthesizer';
+import { EngineParams, DEFAULT_ENGINE_PARAMS, sanitizeEngineParams } from './engine/engineParams';
 
 export const App: React.FC = () => {
-  // Engine Architecture Switcher (Lexus V8, BMW I-6, Subaru Boxer-4)
-  const [currentEngineId, setCurrentEngineId] = useState<EngineId>(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const ep = params.get('engine') as EngineId;
-      if (ep === 'boxer4_subaru' || ep === 'i6_bmw' || ep === 'v8_lexus') {
-        return ep;
-      }
-    } catch {
-      // Fallback
-    }
-    return 'v8_lexus';
-  });
+  // This lab is focused on the Lexus 2UR-GSE V8 only (I6 / Boxer assemblies remain in the repo but are unused).
+  // (asserted to the full EngineId type so the existing per-engine branches below still type-check)
+  const currentEngineId = 'v8_lexus' as EngineId;
   const engineCfg = getEngineConfig(currentEngineId);
+
+  // Shared, user-adjustable physics parameters (bore, stroke, heat input, material).
+  // Read by the kinematics / thermodynamics code; the Lab controls will edit it in later steps.
+  const [engineParams, setEngineParams] = useState<EngineParams>(DEFAULT_ENGINE_PARAMS);
+  const handleSetEngineParams = useCallback((patch: Partial<EngineParams>) => {
+    setEngineParams((prev) => sanitizeEngineParams({ ...prev, ...patch }));
+  }, []);
 
   // Engine State: Defaults to OFF on page launch (requires explicit starter ignition)
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -115,6 +114,7 @@ export const App: React.FC = () => {
     activeFault,
     driveMode,
     currentEngineId,
+    engineParams,
   });
   stateRef.current = {
     isRunning,
@@ -128,48 +128,13 @@ export const App: React.FC = () => {
     activeFault,
     driveMode,
     currentEngineId,
+    engineParams,
   };
 
   // Sound Toggle Handler
   const handleToggleSound = useCallback(() => {
     const active = engineAudio.toggleMute();
     setSoundEnabled(active);
-  }, []);
-
-  // Engine Architecture Switcher Callback
-  const handleSelectEngine = useCallback((newEngineId: EngineId) => {
-    setCurrentEngineId(newEngineId);
-    engineAudio.setEngine(newEngineId);
-    const newCfg = getEngineConfig(newEngineId);
-
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('engine', newEngineId);
-      window.history.replaceState({}, '', url.toString());
-    } catch {
-      // ignore
-    }
-
-    // Reset gearbox state to Neutral
-    setGear('N');
-    ptRef.current.gear = 'N';
-    ptRef.current.speedMps = 0;
-    ptRef.current.speedKmh = 0;
-    ptRef.current.speedMph = 0;
-
-    // Clamp selected cylinder within new engine's cylinder count
-    setSelectedCylinderId((prev) => (prev > newCfg.cylinderCount ? 1 : prev));
-
-    // Instantaneously recompute telemetry for the new engine
-    setTelemetryList(
-      computeAllCylindersTelemetry(
-        stateRef.current.crankAngle,
-        stateRef.current.rpm,
-        stateRef.current.throttle,
-        stateRef.current.activeFault,
-        newEngineId
-      )
-    );
   }, []);
 
   // Engine Start/Stop Handler with Authentic Starter Sequence
@@ -398,7 +363,14 @@ export const App: React.FC = () => {
       }
 
       // 4. Compute live telemetry across all cylinders for current engine
-      const telemetry = computeAllCylindersTelemetry(newAngle, currentRpm, s.throttle, s.activeFault, curEng);
+      const telemetry = computeAllCylindersTelemetry(
+        newAngle,
+        currentRpm,
+        s.throttle,
+        s.activeFault,
+        curEng,
+        s.engineParams
+      );
 
       // 5. Update Post-Exhaust Audio Engine
       engineAudio.update(s.isRunning, currentRpm, s.throttle, s.activeFault, s.isStarting);
@@ -447,57 +419,18 @@ export const App: React.FC = () => {
           selectedComponentId={selectedComponentId}
           selectedCylinderId={selectedCylinderId}
           cameraPreset={cameraPreset}
+          engineParams={engineParams}
           onSelectComponent={(id) => {
             setSelectedComponentId(id);
           }}
           onSelectCylinder={setSelectedCylinderId}
         />
 
-        {/* Prominent High-Performance Tachometer Gauge Cluster with Engine Switcher Directly Above */}
-        <div className="absolute bottom-4 left-4 z-10 pointer-events-auto animate-in fade-in duration-300 flex flex-col gap-2 items-start">
-          {/* Engine Choice Switcher Bar Placed Directly Above the Meter */}
-          <div className="bg-slate-950/90 hover:bg-slate-950/95 backdrop-blur-xl border border-slate-800/90 hover:border-slate-700/80 rounded-xl p-1 shadow-2xl transition-all flex items-center gap-1">
-            {[
-              {
-                id: 'v8_lexus' as EngineId,
-                name: 'Lexus LC 500',
-                shortName: 'Lexus V8',
-                badge: 'V8',
-                activeStyle: 'bg-amber-600 text-white shadow-md shadow-amber-600/40 ring-1 ring-amber-400/60',
-              },
-              {
-                id: 'i6_bmw' as EngineId,
-                name: 'BMW M3 S58',
-                shortName: 'BMW I-6',
-                badge: 'I-6',
-                activeStyle: 'bg-sky-600 text-white shadow-md shadow-sky-600/40 ring-1 ring-sky-400/60',
-              },
-              {
-                id: 'boxer4_subaru' as EngineId,
-                name: 'Subaru STI',
-                shortName: 'Subaru Boxer',
-                badge: 'BOXER',
-                activeStyle: 'bg-rose-600 text-white shadow-md shadow-rose-600/40 ring-1 ring-rose-400/60',
-              },
-            ].map((eng) => (
-              <button
-                key={eng.id}
-                onClick={() => handleSelectEngine(eng.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition select-none ${
-                  currentEngineId === eng.id
-                    ? eng.activeStyle
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
-                }`}
-                title={`Switch engine to ${eng.name}`}
-              >
-                <span className="text-[9px] px-1 py-0.2 rounded bg-black/40 border border-white/20 font-black">
-                  {eng.badge}
-                </span>
-                <span>{eng.shortName}</span>
-              </button>
-            ))}
-          </div>
+        {/* Displacement Lab control (bore / stroke / total displacement) */}
+        <DisplacementControl params={engineParams} onChange={handleSetEngineParams} />
 
+        {/* Prominent High-Performance Tachometer Gauge Cluster */}
+        <div className="absolute bottom-4 left-4 z-10 pointer-events-auto animate-in fade-in duration-300 flex flex-col gap-2 items-start">
           <div className="bg-slate-950/85 hover:bg-slate-950/95 backdrop-blur-xl border border-slate-800/90 hover:border-slate-700/80 rounded-2xl p-2 shadow-2xl transition-all flex flex-col items-center">
             <TachometerGauge
               rpm={rpm}
@@ -653,6 +586,7 @@ export const App: React.FC = () => {
                   activeFault={activeFault}
                   bhp={bhp}
                   totalTorqueLbFt={totalTorqueLbFt}
+                  engineParams={engineParams}
                 />
               )}
 

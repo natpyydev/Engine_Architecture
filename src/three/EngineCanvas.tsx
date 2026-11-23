@@ -9,6 +9,7 @@ import { Boxer4Assembly } from './Boxer4Assembly';
 import { FlowVisualizer } from './FlowVisualizer';
 import { CylinderTelemetry, ViewMode, SeeThroughMode, EngineId } from '../engine/types';
 import { ENGINE_COMPONENTS } from '../engine/componentSpecs';
+import { EngineParams, DEFAULT_ENGINE_PARAMS } from '../engine/engineParams';
 import { Sparkles, Camera } from 'lucide-react';
 
 interface EngineCanvasProps {
@@ -22,6 +23,7 @@ interface EngineCanvasProps {
   selectedComponentId: string | null;
   selectedCylinderId: number;
   cameraPreset: string;
+  engineParams?: EngineParams;
   onSelectComponent: (componentId: string | null) => void;
   onSelectCylinder: (cylinderId: number) => void;
 }
@@ -37,6 +39,7 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
   selectedComponentId,
   selectedCylinderId,
   cameraPreset,
+  engineParams = DEFAULT_ENGINE_PARAMS,
   onSelectComponent: _onSelectComponent,
   onSelectCylinder: _onSelectCylinder,
 }) => {
@@ -69,6 +72,7 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
     explodedProgress,
     selectedComponentId,
     selectedCylinderId,
+    engineParams,
   });
   latestProps.current = {
     telemetryList,
@@ -79,7 +83,10 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
     explodedProgress,
     selectedComponentId,
     selectedCylinderId,
+    engineParams,
   };
+  // Tracks which params object was last pushed into which assembly (re-applied after an assembly swap)
+  const appliedParamsRef = useRef<{ asm: unknown; params: EngineParams } | null>(null);
 
   // Camera preset handler
   useEffect(() => {
@@ -348,6 +355,16 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
       if (assemblyRef.current && visualizerRef.current) {
         const isCutaway = p.viewMode === 'cutaway';
         const showKinetic = p.viewMode === 'kinetic';
+
+        // Live displacement: push bore / stroke into the V8 meshes only when they changed (no rebuild).
+        const asm = assemblyRef.current;
+        if (asm instanceof V8Assembly) {
+          const applied = appliedParamsRef.current;
+          if (!applied || applied.asm !== asm || applied.params !== p.engineParams) {
+            asm.setEngineParams(p.engineParams);
+            appliedParamsRef.current = { asm, params: p.engineParams };
+          }
+        }
 
         assemblyRef.current.updateKinematics(
           p.telemetryList,
