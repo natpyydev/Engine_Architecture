@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { CylinderMaterialId } from '../engine/engineParams';
+import { getCylinderMaterial, PartLook } from '../engine/cylinderMaterials';
 
 export interface EngineMaterialPalette {
   block: THREE.MeshStandardMaterial;
@@ -229,4 +231,80 @@ export function createEngineMaterials(): EngineMaterialPalette {
       blending: THREE.AdditiveBlending,
     }),
   };
+}
+// ---------------------------------------------------------------------------------------------
+// Cylinder material selector (block / piston crowns / cylinder sleeves)
+// ---------------------------------------------------------------------------------------------
+
+const grainCache: Partial<Record<'sand' | 'brushed', THREE.Texture>> = {};
+
+/** Small procedural bump texture drawn on a canvas (no image files, fully offline). */
+function getGrainTexture(kind: 'sand' | 'brushed'): THREE.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const cached = grainCache[kind];
+  if (cached) return cached;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, size, size);
+  if (kind === 'sand') {
+    for (let i = 0; i < 9000; i++) {
+      const v = 70 + Math.floor(Math.random() * 150);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      const w = 1 + Math.floor(Math.random() * 3);
+      ctx.fillRect(Math.random() * size, Math.random() * size, w, w);
+    }
+  } else {
+    for (let y = 0; y < size; y++) {
+      const v = 110 + Math.floor(Math.random() * 60);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(0, y, size, 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(4, 4);
+  grainCache[kind] = tex;
+  return tex;
+}
+
+function applyLook(mat: THREE.MeshStandardMaterial, look: PartLook) {
+  mat.color.setHex(look.color);
+  mat.metalness = look.metalness;
+  mat.roughness = look.roughness;
+  mat.envMapIntensity = look.envMapIntensity;
+  const grain = look.grain === 'none' ? null : getGrainTexture(look.grain);
+  if (mat.bumpMap !== grain) {
+    mat.bumpMap = grain;
+    mat.bumpScale = look.grain === 'sand' ? 1.5 : 0.8;
+    mat.needsUpdate = true; // shader variant changes when a map is added / removed
+  }
+}
+
+/** Re-skin the engine block, piston crowns and cylinder sleeves for the chosen material. */
+export function applyCylinderMaterial(palette: EngineMaterialPalette, id: CylinderMaterialId) {
+  const spec = getCylinderMaterial(id);
+  applyLook(palette.block, spec.look.block);
+  applyLook(palette.piston, spec.look.piston);
+  applyLook(palette.cylinderLiner, spec.look.liner);
+}
+
+/**
+ * Overheat glow: 0 = none. Block / pistons / sleeves go dull red-hot as the wall temperature
+ * climbs past the material's service limit. Cheap enough to call every frame.
+ */
+export function applyThermalGlow(palette: EngineMaterialPalette, excess01: number) {
+  const g = Math.max(0, Math.min(1, excess01));
+  const set = (m: THREE.MeshStandardMaterial, k: number) => {
+    m.emissive.setHex(0xff3a00);
+    m.emissiveIntensity = g * k;
+  };
+  set(palette.piston, 0.6);
+  set(palette.cylinderLiner, 0.5);
+  set(palette.block, 0.25);
 }

@@ -2,14 +2,15 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { createEngineMaterials, EngineMaterialPalette } from './materials';
+import { createEngineMaterials, EngineMaterialPalette, applyCylinderMaterial, applyThermalGlow } from './materials';
 import { V8Assembly } from './V8Assembly';
 import { I6Assembly } from './I6Assembly';
 import { Boxer4Assembly } from './Boxer4Assembly';
 import { FlowVisualizer } from './FlowVisualizer';
 import { CylinderTelemetry, ViewMode, SeeThroughMode, EngineId } from '../engine/types';
 import { ENGINE_COMPONENTS } from '../engine/componentSpecs';
-import { EngineParams, DEFAULT_ENGINE_PARAMS } from '../engine/engineParams';
+import { EngineParams, DEFAULT_ENGINE_PARAMS, CylinderMaterialId } from '../engine/engineParams';
+import { getWallThermalState } from '../engine/thermodynamics';
 import { Sparkles, Camera } from 'lucide-react';
 
 interface EngineCanvasProps {
@@ -87,6 +88,7 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
   };
   // Tracks which params object was last pushed into which assembly (re-applied after an assembly swap)
   const appliedParamsRef = useRef<{ asm: unknown; params: EngineParams } | null>(null);
+  const appliedMaterialRef = useRef<CylinderMaterialId | null>(null);
 
   // Camera preset handler
   useEffect(() => {
@@ -356,6 +358,17 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
         const isCutaway = p.viewMode === 'cutaway';
         const showKinetic = p.viewMode === 'kinetic';
 
+        // Cylinder material: re-skin the shared palette when the selection changes; overheat glow follows wall temperature.
+        const palette = materialsRef.current;
+        if (palette) {
+          if (appliedMaterialRef.current !== p.engineParams.material) {
+            applyCylinderMaterial(palette, p.engineParams.material);
+            appliedMaterialRef.current = p.engineParams.material;
+          }
+          const wall = getWallThermalState(p.throttlePercent, p.engineParams);
+          applyThermalGlow(palette, (wall.wallTempK - wall.maxServiceTempK) / 150);
+        }
+
         // Live displacement: push bore / stroke into the V8 meshes only when they changed (no rebuild).
         const asm = assemblyRef.current;
         if (asm instanceof V8Assembly) {
@@ -377,6 +390,7 @@ export const EngineCanvas: React.FC<EngineCanvasProps> = ({
           p.crankAngle
         );
 
+        visualizerRef.current.setHeatInput(p.engineParams.heatInputPct);
         visualizerRef.current.update(p.telemetryList, showKinetic);
       }
 

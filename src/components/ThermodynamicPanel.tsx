@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { CylinderTelemetry, DiagnosticFaultType } from '../engine/types';
-import { generateReferenceOttoCycle } from '../engine/thermodynamics';
+import { generateReferenceOttoCycle, getCycleSummary } from '../engine/thermodynamics';
+import { getCylinderMaterial } from '../engine/cylinderMaterials';
 import { EngineParams, DEFAULT_ENGINE_PARAMS, getDerivedGeometry } from '../engine/engineParams';
 import { Activity, Gauge, Flame, Zap, HelpCircle } from 'lucide-react';
 import katex from 'katex';
@@ -25,18 +26,26 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
   engineParams = DEFAULT_ENGINE_PARAMS,
 }) => {
   const pvCanvasRef = useRef<HTMLCanvasElement>(null);
+  const summary = useMemo(
+    () => getCycleSummary(throttle, activeFault, engineParams),
+    [throttle, activeFault, engineParams]
+  );
   const tsCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const formulaEtaRef = useRef<HTMLDivElement>(null);
   const formulaWorkRef = useRef<HTMLDivElement>(null);
   const formulaBhpRef = useRef<HTMLDivElement>(null);
   const formulaTorqueRef = useRef<HTMLDivElement>(null);
+  const formulaQinRef = useRef<HTMLDivElement>(null);
+  const formulaWallRef = useRef<HTMLDivElement>(null);
+
+  const geoNow = getDerivedGeometry(engineParams);
 
   // Render KaTeX Math
   useEffect(() => {
     if (formulaEtaRef.current) {
       katex.render(
-        `\\eta_{th} = 1 - \\frac{1}{r_c^{\\gamma - 1}} = 1 - \\frac{1}{9.6^{0.35}} \\approx 54.8\\%`,
+        `\\eta_{th} = 1 - \\frac{1}{r_c^{\\gamma - 1}} = 1 - \\frac{1}{${geoNow.compressionRatio.toFixed(1)}^{0.35}} \\approx ${(summary.etaOtto * 100).toFixed(1)}\\%`,
         formulaEtaRef.current,
         { throwOnError: false }
       );
@@ -55,6 +64,21 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
         { throwOnError: false }
       );
     }
+    if (formulaWallRef.current) {
+      const w = summary.wall;
+      katex.render(
+        `q'' = \\frac{T_{g} - T_{c}}{\\frac{1}{h_g} + \\frac{t}{k} + \\frac{1}{h_c}} = ${w.heatFluxKWm2.toFixed(0)}\\,\\text{kW/m}^2 \\qquad T_{wall} = T_g - \\frac{q''}{h_g} = ${w.wallTempK.toFixed(0)}\\,\\text{K} \\;(k = ${w.conductivityWmK}\\,\\text{W/m·K})`,
+        formulaWallRef.current,
+        { throwOnError: false }
+      );
+    }
+    if (formulaQinRef.current) {
+      katex.render(
+        `\\eta_{ind} = \\eta_{th}(1 - f_{loss}) = ${summary.etaOtto.toFixed(3)} \\times (1 - ${summary.lossFraction.toFixed(3)}) = ${(summary.etaIndicated * 100).toFixed(1)}\\% \\qquad W_{net} = \\eta_{ind} Q_{in} = ${summary.netWorkJ.toFixed(0)}\\,\\text{J}`,
+        formulaQinRef.current,
+        { throwOnError: false }
+      );
+    }
     if (formulaTorqueRef.current) {
       katex.render(
         `\\tau(\\theta) = F_{gas}(\\theta) \\cdot r \\left( \\sin\\theta + \\frac{\\lambda \\sin 2\\theta}{2\\sqrt{1-\\lambda^2\\sin^2\\theta}} \\right)`,
@@ -62,7 +86,7 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
         { throwOnError: false }
       );
     }
-  }, [rpm, bhp, totalTorqueLbFt]);
+  }, [rpm, bhp, totalTorqueLbFt, summary, geoNow.compressionRatio]);
 
   // Render P-v and T-s Diagrams with enhanced graphics
   useEffect(() => {
@@ -455,6 +479,62 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
         </div>
       </div>
 
+      {/* Heat Input & Cycle Efficiency (driven by the Heat Input slider) */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 shadow-lg">
+        <div className="flex items-center justify-between text-slate-200 font-bold border-b border-slate-800 pb-2 mb-2.5 text-xs">
+          <span className="flex items-center gap-1.5">
+            <Flame className="w-4 h-4 text-amber-400" />
+            Heat Input &amp; Cycle Efficiency
+          </span>
+          <span className="font-mono text-[10px] text-amber-300">Q_in = {engineParams.heatInputPct.toFixed(0)}% of baseline</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono">
+          {[
+            { label: 'Q_in / cyl / cycle', value: `${summary.qInJ.toFixed(0)} J`, tone: 'text-slate-100' },
+            { label: 'Peak temperature', value: `${summary.peakTempK.toFixed(0)} K`, tone: 'text-amber-300' },
+            { label: 'Peak pressure', value: `${summary.peakPressureBar.toFixed(0)} bar`, tone: 'text-sky-300' },
+            { label: 'Thermal efficiency', value: `${(summary.etaIndicated * 100).toFixed(1)} %`, tone: 'text-emerald-300' },
+            { label: 'Net work / cycle', value: `${summary.netWorkJ.toFixed(0)} J`, tone: 'text-slate-100' },
+          ].map((m) => (
+            <div key={m.label} className="bg-slate-950/70 border border-slate-800 rounded-lg p-2">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wide">{m.label}</div>
+              <div className={`text-sm font-extrabold ${m.tone}`}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono mt-2">
+          {[
+            { label: 'Cylinder material', value: getCylinderMaterial(engineParams.material).label, tone: 'text-violet-300' },
+            { label: 'Conductivity k', value: `${summary.wall.conductivityWmK} W/m·K`, tone: 'text-slate-100' },
+            {
+              label: 'Wall temperature',
+              value: `${summary.wall.wallTempK.toFixed(0)} K`,
+              tone:
+                summary.wall.status === 'overheat'
+                  ? 'text-red-400'
+                  : summary.wall.status === 'hot'
+                    ? 'text-amber-300'
+                    : 'text-emerald-300',
+            },
+            {
+              label: `Margin to ${summary.wall.maxServiceTempK} K limit`,
+              value: `${summary.wall.marginK >= 0 ? '+' : ''}${summary.wall.marginK.toFixed(0)} K`,
+              tone:
+                summary.wall.status === 'overheat'
+                  ? 'text-red-400'
+                  : summary.wall.status === 'hot'
+                    ? 'text-amber-300'
+                    : 'text-emerald-300',
+            },
+          ].map((m) => (
+            <div key={m.label} className="bg-slate-950/70 border border-slate-800 rounded-lg p-2">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wide">{m.label}</div>
+              <div className={`text-sm font-extrabold ${m.tone}`}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* KaTeX Mathematical Formulations Card */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-3 shadow-lg">
         <div className="flex items-center gap-1.5 text-slate-200 font-bold border-b border-slate-800 pb-2 text-xs">
@@ -463,10 +543,26 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+          <div className="sm:col-span-2 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
+            <div className="flex items-center justify-between text-slate-400 mb-1">
+              <span className="font-medium">Cylinder Wall Heat Conduction (Fourier)</span>
+              <span className="text-[9px] font-mono text-violet-400">material sets k</span>
+            </div>
+            <div ref={formulaWallRef} className="text-violet-300 overflow-x-auto py-1" />
+          </div>
+
+          <div className="sm:col-span-2 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
+            <div className="flex items-center justify-between text-slate-400 mb-1">
+              <span className="font-medium">Indicated Efficiency with Heat Loss</span>
+              <span className="text-[9px] font-mono text-amber-400">hotter gas → more wall loss</span>
+            </div>
+            <div ref={formulaQinRef} className="text-amber-300 overflow-x-auto py-1" />
+          </div>
+
           <div className="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
             <div className="flex items-center justify-between text-slate-400 mb-1">
               <span className="font-medium">Thermal Efficiency (η_th)</span>
-              <span className="text-[9px] font-mono text-sky-400">r_c = 9.6</span>
+              <span className="text-[9px] font-mono text-sky-400">r_c = {geoNow.compressionRatio.toFixed(1)}</span>
             </div>
             <div ref={formulaEtaRef} className="text-sky-300 overflow-x-auto py-1" />
           </div>
@@ -490,7 +586,7 @@ export const ThermodynamicPanel: React.FC<ThermodynamicPanelProps> = ({
           <div className="bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
             <div className="flex items-center justify-between text-slate-400 mb-1">
               <span className="font-medium">Slider-Crank Torque Function</span>
-              <span className="text-[9px] font-mono text-amber-400">\lambda = r/l = 0.277</span>
+              <span className="text-[9px] font-mono text-amber-400">λ = r/l = {geoNow.rodToCrankRatio.toFixed(3)}</span>
             </div>
             <div ref={formulaTorqueRef} className="text-amber-300 overflow-x-auto py-1" />
           </div>

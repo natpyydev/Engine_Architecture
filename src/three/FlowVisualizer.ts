@@ -2,6 +2,38 @@ import * as THREE from 'three';
 import { EngineId, CylinderTelemetry } from '../engine/types';
 import { getEngineConfig, CylinderSpecConfig } from '../engine/engineRegistry';
 import { BOXER_CYL_Z } from './Boxer4Assembly';
+import { getPeakCombustionTempK } from '../engine/thermodynamics';
+
+// Flame colour vs. peak combustion temperature (K). The 2700 K stops are the original (100 % heat) look.
+const FLAME_OUTER_STOPS: [number, THREE.Color][] = [
+  [1200, new THREE.Color(0x7a1010)], // dim deep red
+  [1800, new THREE.Color(0xc2290a)],
+  [2700, new THREE.Color(0xff4500)], // baseline orange-red
+  [3200, new THREE.Color(0xffa030)],
+  [3650, new THREE.Color(0xffe08a)], // very hot: yellow-white
+];
+const FLAME_CORE_STOPS: [number, THREE.Color][] = [
+  [1200, new THREE.Color(0xff7a3d)],
+  [2700, new THREE.Color(0xfffbeb)], // baseline white-hot core
+  [3650, new THREE.Color(0xd6e6ff)], // blue-white
+];
+const FLAME_LIGHT_STOPS: [number, THREE.Color][] = [
+  [1200, new THREE.Color(0xb91c1c)],
+  [2700, new THREE.Color(0xff6a00)], // baseline chamber flash light
+  [3650, new THREE.Color(0xffd9a0)],
+];
+
+function gradientColor(stops: [number, THREE.Color][], tempK: number, out: THREE.Color): THREE.Color {
+  if (tempK <= stops[0][0]) return out.copy(stops[0][1]);
+  for (let i = 1; i < stops.length; i++) {
+    if (tempK <= stops[i][0]) {
+      const [t0, c0] = stops[i - 1];
+      const [t1, c1] = stops[i];
+      return out.lerpColors(c0, c1, (tempK - t0) / (t1 - t0));
+    }
+  }
+  return out.copy(stops[stops.length - 1][1]);
+}
 
 export class FlowVisualizer {
   public root: THREE.Group;
@@ -12,6 +44,12 @@ export class FlowVisualizer {
   private flameCoreMeshes: THREE.Mesh[] = [];
   private flameOuterMeshes: THREE.Mesh[] = [];
   private chamberLights: THREE.PointLight[] = [];
+
+  // Heat-input driven look of the combustion flame (1.0 / 1.0 = original look at 100 %)
+  private heatInputPct: number = 100;
+  private flameBrightness: number = 1;
+  private flameWidth: number = 1;
+  private readonly tmpColor = new THREE.Color();
 
   private currentEngineId: EngineId = 'v8_lexus';
   private cylinderConfigs: CylinderSpecConfig[] = [];
@@ -62,6 +100,29 @@ export class FlowVisualizer {
     }
 
     this.buildEffects();
+    this.applyHeatVisuals();
+  }
+
+  /** Heat input (% of baseline fuel energy) -> flame colour, brightness and width. Cheap; call every frame. */
+  public setHeatInput(heatInputPct: number) {
+    if (heatInputPct === this.heatInputPct) return;
+    this.heatInputPct = heatInputPct;
+    this.applyHeatVisuals();
+  }
+
+  private applyHeatVisuals() {
+    const h = this.heatInputPct / 100;
+    const peakK = getPeakCombustionTempK(this.heatInputPct);
+    this.flameBrightness = Math.min(1.2, Math.max(0.25, 0.35 + 0.65 * h));
+    this.flameWidth = 0.8 + 0.2 * h;
+
+    this.flameOuterMeshes.forEach((m) =>
+      (m.material as THREE.MeshBasicMaterial).color.copy(gradientColor(FLAME_OUTER_STOPS, peakK, this.tmpColor))
+    );
+    this.flameCoreMeshes.forEach((m) =>
+      (m.material as THREE.MeshBasicMaterial).color.copy(gradientColor(FLAME_CORE_STOPS, peakK, this.tmpColor))
+    );
+    this.chamberLights.forEach((l) => l.color.copy(gradientColor(FLAME_LIGHT_STOPS, peakK, this.tmpColor)));
   }
 
   private buildEffects() {
@@ -292,20 +353,24 @@ export class FlowVisualizer {
         if (flameCore) {
           flameCore.visible = true;
           flameCore.position.set(midX, midY, zPos);
-          flameCore.scale.set(1.0 + Math.random() * 0.1, flameLength, 1.0 + Math.random() * 0.1);
-          (flameCore.material as THREE.MeshBasicMaterial).opacity = fi * 0.92;
+          flameCore.scale.set(
+            (1.0 + Math.random() * 0.1) * this.flameWidth,
+            flameLength,
+            (1.0 + Math.random() * 0.1) * this.flameWidth
+          );
+          (flameCore.material as THREE.MeshBasicMaterial).opacity = Math.min(1, fi * 0.92 * this.flameBrightness);
         }
 
         if (flameOuter) {
           flameOuter.visible = true;
           flameOuter.position.set(midX, midY, zPos);
-          flameOuter.scale.set(1.05, flameLength * 1.15, 1.05);
-          (flameOuter.material as THREE.MeshBasicMaterial).opacity = fi * 0.80;
+          flameOuter.scale.set(1.05 * this.flameWidth, flameLength * 1.15, 1.05 * this.flameWidth);
+          (flameOuter.material as THREE.MeshBasicMaterial).opacity = Math.min(1, fi * 0.8 * this.flameBrightness);
         }
 
         if (chLight) {
           chLight.position.set(midX, midY, zPos);
-          chLight.intensity = fi * 3.5;
+          chLight.intensity = fi * 3.5 * Math.pow(this.heatInputPct / 100, 1.5);
         }
       } else {
         if (flameCore) {

@@ -1,63 +1,41 @@
 import React, { useState } from 'react';
-import { ViewMode, SeeThroughMode, EngineId } from '../engine/types';
-import {
-  Power,
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  Scissors,
-  ArrowRightCircle,
-  Layers,
-  Eye,
-  ChevronUp,
-  ChevronDown,
-} from 'lucide-react';
+import { ViewMode, SeeThroughMode } from '../engine/types';
+import { Play, Pause, Volume2, VolumeX, ArrowRightCircle, Eye, ChevronUp, ChevronDown } from 'lucide-react';
 
+/**
+ * Bottom dock = timeline & view tools only. Engine run, RPM, throttle, exploded and cutaway
+ * controls live in the Physics Engine Lab sidebar.
+ */
 interface ControlDockProps {
-  engineId?: EngineId;
   isRunning: boolean;
-  isStarting?: boolean;
   rpm: number;
-  throttle: number;
   crankAngle: number;
   speedMultiplier: number;
   viewMode: ViewMode;
   seeThroughMode: SeeThroughMode;
-  explodedProgress: number;
   soundEnabled: boolean;
   cameraPreset: string;
-  onToggleStartStop: () => void;
-  onSetThrottle: (throttle: number) => void;
   onSetCrankAngle: (angle: number) => void;
   onSetSpeedMultiplier: (mult: number) => void;
   onSetViewMode: (mode: ViewMode) => void;
   onSetSeeThroughMode: (mode: SeeThroughMode) => void;
-  onSetExplodedProgress: (progress: number) => void;
   onToggleSound: () => void;
   onSelectCameraPreset: (preset: string) => void;
 }
 
 export const ControlDock: React.FC<ControlDockProps> = ({
-  engineId = 'v8_lexus',
   isRunning,
-  isStarting = false,
   rpm,
-  throttle,
   crankAngle,
   speedMultiplier,
   viewMode,
   seeThroughMode,
-  explodedProgress,
   soundEnabled,
   cameraPreset,
-  onToggleStartStop,
-  onSetThrottle,
   onSetCrankAngle,
   onSetSpeedMultiplier,
   onSetViewMode,
   onSetSeeThroughMode,
-  onSetExplodedProgress,
   onToggleSound,
   onSelectCameraPreset,
 }) => {
@@ -79,20 +57,6 @@ export const ControlDock: React.FC<ControlDockProps> = ({
       <div className="bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 px-4 h-12 flex items-center text-slate-200 z-20 shadow-2xl shrink-0 overflow-hidden select-none">
         <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-3 text-xs font-mono">
           <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={onToggleStartStop}
-              disabled={isStarting}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition text-[11px] shrink-0 ${
-                isStarting
-                  ? 'bg-amber-600 text-white animate-pulse'
-                  : isRunning
-                  ? 'bg-red-600 hover:bg-red-500 text-white'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-              }`}
-            >
-              <Power className="w-3.5 h-3.5" />
-              <span>{isStarting ? 'CRANKING' : isRunning ? 'STOP' : 'START'}</span>
-            </button>
             <span className="text-white font-bold inline-block w-20 text-left">{rpm.toFixed(0)} RPM</span>
             <span className="text-slate-600">|</span>
             <span className="text-sky-400 font-semibold inline-block w-24 text-center">{currentStroke}</span>
@@ -129,89 +93,8 @@ export const ControlDock: React.FC<ControlDockProps> = ({
   return (
     <div className="relative bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 px-4 py-2.5 text-slate-200 z-20 shadow-2xl shrink-0 overflow-hidden select-none">
       <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-3 lg:gap-4">
-        {/* Left Section: Ignition, Circular Tachometer & Responsive Throttle */}
-        <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start shrink-0">
-          {/* Ignition Start/Stop Button */}
-          <button
-            onClick={onToggleStartStop}
-            disabled={isStarting}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold transition shadow-lg shrink-0 border ${
-              isStarting
-                ? 'bg-amber-600 border-amber-400 text-white shadow-amber-600/40 ring-1 ring-amber-400/50 cursor-wait animate-pulse'
-                : isRunning
-                ? 'bg-red-600 hover:bg-red-500 border-red-400 text-white shadow-red-600/30 ring-1 ring-red-500/50'
-                : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white shadow-emerald-600/30 ring-1 ring-emerald-500/50 animate-pulse'
-            }`}
-          >
-            <Power className="w-4 h-4" />
-            <div className="text-left">
-              <span className="text-[9px] uppercase tracking-wider block opacity-80">Ignition</span>
-              <span className="text-xs uppercase font-extrabold tracking-wider block">
-                {isStarting
-                  ? 'Cranking...'
-                  : isRunning
-                  ? 'Kill Engine'
-                  : engineId === 'i6_bmw'
-                  ? 'Start I-6'
-                  : engineId === 'boxer4_subaru'
-                  ? 'Start Boxer-4'
-                  : 'Start V8'}
-              </span>
-            </div>
-          </button>
-
-          {/* Throttle Slider & Quick Preset Buttons */}
-          <div className="w-44 sm:w-52 shrink-0">
-            <div className="flex items-center justify-between text-[11px] mb-1 font-mono">
-              <span className="text-slate-400">THROTTLE</span>
-              <span className="text-amber-400 font-bold bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800/80 inline-block w-12 text-center">
-                {throttle.toFixed(0)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={throttle}
-              onChange={(e) => onSetThrottle(parseFloat(e.target.value))}
-              className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
-            />
-            {/* Quick Throttle Presets */}
-            <div className="flex items-center justify-between mt-1 text-[9px] font-mono text-slate-400">
-              <button
-                onClick={() => onSetThrottle(0)}
-                className="hover:text-amber-400 transition"
-                title="Idle (0%)"
-              >
-                Idle
-              </button>
-              <button
-                onClick={() => onSetThrottle(35)}
-                className="hover:text-amber-400 transition"
-                title="Cruise (35%)"
-              >
-                35%
-              </button>
-              <button
-                onClick={() => onSetThrottle(70)}
-                className="hover:text-amber-400 transition"
-                title="Heavy Load (70%)"
-              >
-                70%
-              </button>
-              <button
-                onClick={() => onSetThrottle(100)}
-                className="hover:text-red-400 font-bold text-amber-500 transition"
-                title="Wide Open Throttle (100%)"
-              >
-                W.O.T.
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Center Section: 720° Four-Stroke Scrub Bar with Cycle Indicator */}
-        <div className="flex-1 w-full max-w-lg space-y-1.5 shrink-0 px-2">
+        <div className="flex-1 w-full max-w-2xl space-y-1.5 px-2">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-slate-400 font-medium shrink-0">Four-Stroke Kinematic Cycle:</span>
             <div className="flex items-center gap-1.5 font-mono shrink-0">
@@ -300,32 +183,6 @@ export const ControlDock: React.FC<ControlDockProps> = ({
 
         {/* Right Section: View Modes, Exploded Slider, & Quick Minimize */}
         <div className="flex items-center gap-2 w-full lg:w-auto justify-between lg:justify-end shrink-0">
-          {/* Exploded Slider */}
-          <div className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 px-2 py-1 rounded-lg shrink-0">
-            <Layers className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                <span>Explode</span>
-                <span className="text-sky-300 font-bold inline-block w-8 text-right">{(explodedProgress * 100).toFixed(0)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={explodedProgress}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  onSetExplodedProgress(val);
-                  if (val > 0 && viewMode !== 'exploded') onSetViewMode('exploded');
-                  else if (val === 0 && viewMode === 'exploded') onSetViewMode('normal');
-                }}
-                className="w-16 h-1.5 bg-slate-800 rounded appearance-none cursor-pointer accent-sky-400 mt-0.5"
-                title="Continuous Exploded Assembly View"
-              />
-            </div>
-          </div>
-
           {/* See-Through / Transparency Button */}
           <button
             onClick={() => {
@@ -350,20 +207,6 @@ export const ControlDock: React.FC<ControlDockProps> = ({
                 ? 'Glass (20%)'
                 : 'See-Through'}
             </span>
-          </button>
-
-          {/* Cutaway Mode Button */}
-          <button
-            onClick={() => onSetViewMode(viewMode === 'cutaway' ? 'normal' : 'cutaway')}
-            className={`p-1.5 px-2 rounded-lg border transition text-xs flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
-              viewMode === 'cutaway'
-                ? 'bg-sky-950 border-sky-400 text-sky-300 shadow-md shadow-sky-500/20'
-                : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
-            }`}
-            title="Toggle Cutaway Internal Cross-Section"
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Cutaway</span>
           </button>
 
           {/* Kinetic Force Vectors Button */}

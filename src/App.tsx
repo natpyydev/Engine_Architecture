@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { EngineCanvas } from './three/EngineCanvas';
 import { HeaderNav, ActivePanelType } from './components/HeaderNav';
 import { ControlDock } from './components/ControlDock';
@@ -9,8 +9,8 @@ import { GuidedLessonsPanel } from './components/GuidedLessonsPanel';
 import { DiagnosticLabPanel } from './components/DiagnosticLabPanel';
 import { ComponentInspector } from './components/ComponentInspector';
 import { TachometerGauge } from './components/TachometerGauge';
-import { DisplacementControl } from './components/DisplacementControl';
-import { X } from 'lucide-react';
+import { LabSidebar } from './components/LabSidebar';
+import { X, SlidersHorizontal } from 'lucide-react';
 import {
   CylinderTelemetry,
   DiagnosticFaultType,
@@ -30,7 +30,8 @@ import {
 import { computeAllCylindersTelemetry, getEngineCylinders } from './engine/firingOrder';
 import { getEngineConfig } from './engine/engineRegistry';
 import { engineAudio } from './engine/audioSynthesizer';
-import { EngineParams, DEFAULT_ENGINE_PARAMS, sanitizeEngineParams } from './engine/engineParams';
+import { getCycleSummary } from './engine/thermodynamics';
+import { EngineParams, DEFAULT_ENGINE_PARAMS, sanitizeEngineParams, getTotalDisplacementL } from './engine/engineParams';
 
 export const App: React.FC = () => {
   // This lab is focused on the Lexus 2UR-GSE V8 only (I6 / Boxer assemblies remain in the repo but are unused).
@@ -45,12 +46,23 @@ export const App: React.FC = () => {
     setEngineParams((prev) => sanitizeEngineParams({ ...prev, ...patch }));
   }, []);
 
+  // Engine torque follows net indicated work per cycle: more displacement or heat input -> more power,
+  // a more conductive wall -> slightly different efficiency. Exactly 1.0 at the default settings.
+  const powerScale = useMemo(() => {
+    const base = getCycleSummary(100, 'none', DEFAULT_ENGINE_PARAMS).netWorkJ;
+    const now = getCycleSummary(100, 'none', engineParams).netWorkJ;
+    return base > 0 ? now / base : 1;
+  }, [engineParams]);
+
   // Engine State: Defaults to OFF on page launch (requires explicit starter ignition)
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const flareTimerRef = useRef<number>(0);
   const [rpm, setRpm] = useState<number>(0);
   const [throttle, setThrottle] = useState<number>(0);
+  // Manual RPM (Lab panel): null = follow throttle & gearbox, number = hold the engine at that speed
+  const [rpmTarget, setRpmTarget] = useState<number | null>(null);
+  const [labOpen, setLabOpen] = useState<boolean>(() => typeof window === 'undefined' || window.innerWidth >= 900);
   const [brake, setBrake] = useState<number>(0);
   const [crankAngle, setCrankAngle] = useState<number>(0);
   const [speedMultiplier, setSpeedMultiplier] = useState<number>(1);
@@ -115,6 +127,8 @@ export const App: React.FC = () => {
     driveMode,
     currentEngineId,
     engineParams,
+    rpmTarget,
+    powerScale,
   });
   stateRef.current = {
     isRunning,
@@ -129,6 +143,8 @@ export const App: React.FC = () => {
     driveMode,
     currentEngineId,
     engineParams,
+    rpmTarget,
+    powerScale,
   };
 
   // Sound Toggle Handler
@@ -152,6 +168,7 @@ export const App: React.FC = () => {
     } else {
       setIsRunning(false);
       setIsStarting(false);
+      setRpmTarget(null);
       flareTimerRef.current = 0;
       engineAudio.stop();
     }
@@ -310,6 +327,8 @@ export const App: React.FC = () => {
         engineTorqueNm = 407 * rpmTorqueFactor * (0.08 + 0.92 * throttleNorm);
       }
 
+      engineTorqueNm *= s.powerScale;
+
       if (s.activeFault === 'misfire_cyl3') engineTorqueNm *= 0.82;
       if (s.activeFault === 'blown_gasket') engineTorqueNm *= 0.70;
       if (s.activeFault === 'pre_ignition') engineTorqueNm *= 0.65;
@@ -339,6 +358,10 @@ export const App: React.FC = () => {
           }
           currentRpm = flareRpm;
           ptRef.current.engineRpm = flareRpm;
+        } else if (s.rpmTarget !== null) {
+          // Lab "manual RPM": hold the engine at the speed chosen on the slider (dyno-style)
+          currentRpm += (s.rpmTarget - currentRpm) * Math.min(1, 6 * dt);
+          ptRef.current.engineRpm = currentRpm;
         } else {
           ptRef.current.gear = s.gear;
           ptRef.current = stepPowertrain(dt, ptRef.current, engineTorqueNm, s.throttle, s.brake, curEng);
@@ -390,6 +413,32 @@ export const App: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, []);
 
+  // Exploded / cutaway view handlers (same rules the old dock buttons used)
+  const handleSetExplodedProgress = useCallback(
+    (val: number) => {
+      setExplodedProgress(val);
+      if (val > 0 && viewMode !== 'exploded') setViewMode('exploded');
+      else if (val === 0 && viewMode === 'exploded') setViewMode('normal');
+    },
+    [viewMode]
+  );
+  const handleToggleExploded = useCallback(() => {
+    if (viewMode === 'exploded') {
+      setExplodedProgress(0);
+      setViewMode('normal');
+    } else {
+      setExplodedProgress((prev) => (prev > 0 ? prev : 0.65));
+      setViewMode('exploded');
+    }
+  }, [viewMode]);
+  const handleToggleCutaway = useCallback(() => {
+    setViewMode((prev) => (prev === 'cutaway' ? 'normal' : 'cutaway'));
+  }, []);
+  const handleResetLab = useCallback(() => {
+    setEngineParams(DEFAULT_ENGINE_PARAMS);
+    setRpmTarget(null);
+  }, []);
+
   const selectedCylinderTelemetry =
     telemetryList.find((c) => c.id === selectedCylinderId) || telemetryList[0];
 
@@ -403,10 +452,39 @@ export const App: React.FC = () => {
         rpm={rpm}
         bhp={bhp}
         activeFault={activeFault}
+        displacementL={getTotalDisplacementL(engineParams)}
       />
 
-      {/* Main Center Stage: 3D Viewport with Collapsible Floating HUD Drawer */}
-      <div className="relative flex-1 min-h-0 w-full overflow-hidden">
+      {/* Main stage: docked Physics Engine Lab controls (left) + 3D viewport with floating HUD drawer (right) */}
+      <div className="flex-1 min-h-0 w-full flex overflow-hidden">
+        {labOpen && (
+          <LabSidebar
+            onClose={() => setLabOpen(false)}
+            onResetLab={handleResetLab}
+            engineParams={engineParams}
+            onChangeParams={handleSetEngineParams}
+            activeFault={activeFault}
+            isRunning={isRunning}
+            isStarting={isStarting}
+            onToggleStartStop={handleToggleStartStop}
+            speedMultiplier={speedMultiplier}
+            onSetSpeedMultiplier={setSpeedMultiplier}
+            rpm={rpm}
+            rpmTarget={rpmTarget}
+            onSetRpmTarget={setRpmTarget}
+            idleRpm={engineCfg.idleRpm}
+            redlineRpm={engineCfg.redlineRpm}
+            throttle={throttle}
+            onSetThrottle={setThrottle}
+            bhp={bhp}
+            viewMode={viewMode}
+            explodedProgress={explodedProgress}
+            onSetExplodedProgress={handleSetExplodedProgress}
+            onToggleExploded={handleToggleExploded}
+            onToggleCutaway={handleToggleCutaway}
+          />
+        )}
+      <div className="relative flex-1 min-w-0 h-full overflow-hidden">
         {/* Three.js Engine Canvas */}
         <EngineCanvas
           engineId={currentEngineId}
@@ -426,8 +504,17 @@ export const App: React.FC = () => {
           onSelectCylinder={setSelectedCylinderId}
         />
 
-        {/* Displacement Lab control (bore / stroke / total displacement) */}
-        <DisplacementControl params={engineParams} onChange={handleSetEngineParams} />
+        {/* Re-open button when the Lab Controls sidebar is hidden */}
+        {!labOpen && (
+          <button
+            onClick={() => setLabOpen(true)}
+            className="absolute top-3 left-3 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-sky-950/90 hover:bg-sky-900 border border-sky-500/70 text-sky-200 hover:text-white text-xs font-bold shadow-xl backdrop-blur transition"
+            title="Show the Physics Engine Lab controls"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            Lab Controls
+          </button>
+        )}
 
         {/* Prominent High-Performance Tachometer Gauge Cluster */}
         <div className="absolute bottom-4 left-4 z-10 pointer-events-auto animate-in fade-in duration-300 flex flex-col gap-2 items-start">
@@ -622,28 +709,22 @@ export const App: React.FC = () => {
           </aside>
         )}
       </div>
+      </div>
 
       {/* Bottom Docked Cockpit Control Center */}
       <ControlDock
-        engineId={currentEngineId}
         isRunning={isRunning}
-        isStarting={isStarting}
         rpm={rpm}
-        throttle={throttle}
         crankAngle={crankAngle}
         speedMultiplier={speedMultiplier}
         viewMode={viewMode}
         seeThroughMode={seeThroughMode}
-        explodedProgress={explodedProgress}
         soundEnabled={soundEnabled}
         cameraPreset={cameraPreset}
-        onToggleStartStop={handleToggleStartStop}
-        onSetThrottle={setThrottle}
         onSetCrankAngle={setCrankAngle}
         onSetSpeedMultiplier={setSpeedMultiplier}
         onSetViewMode={setViewMode}
         onSetSeeThroughMode={setSeeThroughMode}
-        onSetExplodedProgress={setExplodedProgress}
         onToggleSound={handleToggleSound}
         onSelectCameraPreset={setCameraPreset}
       />

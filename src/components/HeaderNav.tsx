@@ -20,6 +20,8 @@ interface HeaderNavProps {
   rpm: number;
   bhp: number;
   activeFault: DiagnosticFaultType;
+  /** Live total displacement (changes with the Displacement slider) */
+  displacementL: number;
 }
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -29,6 +31,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   rpm,
   bhp,
   activeFault,
+  displacementL,
 }) => {
   const engineCfg = getEngineConfig(engineId);
 
@@ -40,15 +43,14 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           {engineCfg.badge}
         </div>
         <div>
-          <h1 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
-            <span className="hidden sm:inline">3D Engine Lab ·</span>
-            <span>{engineCfg.name}</span>
-            <span className={`text-[10px] font-mono font-medium px-1.5 py-0.2 rounded border ${engineCfg.tagColor}`}>
-              {engineCfg.engineCode}
+          <h1 className="text-sm font-extrabold text-white tracking-widest uppercase flex items-center gap-2">
+            <span>Physics Engine Lab</span>
+            <span className={`text-[10px] font-mono font-medium px-1.5 py-0.2 rounded border normal-case tracking-normal ${engineCfg.tagColor}`}>
+              V8 · {displacementL.toFixed(2)} L
             </span>
           </h1>
           <p className="text-[10px] text-slate-400 hidden lg:block">
-            {engineCfg.subtitle}
+            Four-stroke V8 · slider-crank kinematics &amp; Otto-cycle thermodynamics
           </p>
         </div>
       </div>
